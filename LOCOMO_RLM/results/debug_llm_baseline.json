@@ -1,0 +1,91 @@
+{
+  "config": {
+    "data": "data/locomo_rlm_format.json",
+    "out": "results/debug_llm_baseline.json",
+    "agent": "openai",
+    "model": "gpt-4o-mini",
+    "model_name": null,
+    "top_k": 5,
+    "max_samples": 1,
+    "max_questions_per_sample": 3,
+    "max_context_chars": null
+  },
+  "summary": {
+    "overall": {
+      "em": 0.0,
+      "f1": 0.147008547008547,
+      "rouge_l": 0.147008547008547,
+      "count": 3
+    },
+    "by_category": {
+      "2": {
+        "em": 0.0,
+        "f1": 0.15384615384615383,
+        "rouge_l": 0.15384615384615383,
+        "count": 2
+      },
+      "3": {
+        "em": 0.0,
+        "f1": 0.13333333333333333,
+        "rouge_l": 0.13333333333333333,
+        "count": 1
+      }
+    }
+  },
+  "items": [
+    {
+      "sample_id": "conv-26",
+      "sample_idx": 0,
+      "qa_idx": 0,
+      "category": "2",
+      "question": "When did Caroline go to the LGBTQ support group?",
+      "gold_answer": "7 May 2023",
+      "prediction": "Caroline went to the LGBTQ support group on 8 May, 2023.",
+      "metrics": {
+        "em": 0.0,
+        "f1": 0.30769230769230765,
+        "rouge_l": 0.30769230769230765
+      },
+      "agent_log": {
+        "agent": "openai_full_context",
+        "model": "gpt-4o-mini"
+      }
+    },
+    {
+      "sample_id": "conv-26",
+      "sample_idx": 0,
+      "qa_idx": 1,
+      "category": "2",
+      "question": "When did Melanie paint a sunrise?",
+      "gold_answer": 2022,
+      "prediction": "Melanie painted a lake sunrise last year.",
+      "metrics": {
+        "em": 0.0,
+        "f1": 0.0,
+        "rouge_l": 0.0
+      },
+      "agent_log": {
+        "agent": "openai_full_context",
+        "model": "gpt-4o-mini"
+      }
+    },
+    {
+      "sample_id": "conv-26",
+      "sample_idx": 0,
+      "qa_idx": 2,
+      "category": "3",
+      "question": "What fields would Caroline be likely to pursue in her educaton?",
+      "gold_answer": "Psychology, counseling certification",
+      "prediction": "Caroline would be likely to pursue counseling or working in mental health.",
+      "metrics": {
+        "em": 0.0,
+        "f1": 0.13333333333333333,
+        "rouge_l": 0.13333333333333333
+      },
+      "agent_log": {
+        "agent": "openai_full_context",
+        "model": "gpt-4o-mini"
+      }
+    }
+  ]
+}
