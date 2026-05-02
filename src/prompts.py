@@ -61,7 +61,7 @@ python_failed_prompt = """The execution of your program failed due to the follow
 {error}
 """
 
-search_prompt = lambda docs: f"The top {len(docs)} most relevant documents for your query are listed below.\n\n" + "\n\n".join(f"Document {i}: {doc}" for i, doc in enumerate(docs)) + '\n'
+search_prompt = lambda docs: f"The top {len(docs)} most relevant documents for your query are listed below.\n\n" + "\n\n".join(f"Document {i + 1}: {doc}" for i, doc in enumerate(docs)) + '\n'
 
 task_prompt = """You are an AI agent engaging in a conversation with a user and you are asked to complete a given task. Due to length limit, the past conversations are not shown but you can request to look up (as specified later). To improve the quality of the reply, you can take the following actions several times to complete the task:
 

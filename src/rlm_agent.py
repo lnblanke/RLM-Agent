@@ -139,7 +139,7 @@ class RLMAgent:
 
                 msg_list.append({"role": "system", "content": python_prompt.format(result=s.getvalue())})
             else:
-                query = match.group(2).strip(' ')
+                query = match.group(3).strip(' ')
                 tool = {"name": "search", "query": query}
                 docs = self.exec_search(query=query)
                 msg_list.append({"role": "system", "content": search_prompt(docs)})
