@@ -1,17 +1,23 @@
 {
   "config": {
     "data": "data/locomo_rlm_format.json",
-    "out": "results/debug_llm_baseline.json",
+    "out": "results/locomo_openai_small_test.json",
     "agent": "openai",
-    "model": "gpt-4o-mini",
-    "model_name": null,
+    "model_name": "gpt-4o-mini",
     "top_k": 5,
     "max_samples": 1,
     "max_questions_per_sample": 3,
-    "max_context_chars": null
+    "max_context_chars": null,
+    "bertscore": true,
+    "bertscore_model": "roberta-large",
+    "bertscore_lang": "en",
+    "bertscore_rescale_with_baseline": true
   },
   "summary": {
     "overall": {
+      "bertscore_f1": 0.21781888355811438,
+      "bertscore_precision": 0.16177709152301153,
+      "bertscore_recall": 0.273761789004008,
       "em": 0.0,
       "f1": 0.147008547008547,
       "rouge_l": 0.147008547008547,
@@ -19,12 +25,18 @@
     },
     "by_category": {
       "2": {
+        "bertscore_f1": 0.22637223079800606,
+        "bertscore_precision": 0.15357695147395134,
+        "bertscore_recall": 0.300232395529747,
         "em": 0.0,
         "f1": 0.15384615384615383,
         "rouge_l": 0.15384615384615383,
         "count": 2
       },
       "3": {
+        "bertscore_f1": 0.200712189078331,
+        "bertscore_precision": 0.1781773716211319,
+        "bertscore_recall": 0.2208205759525299,
         "em": 0.0,
         "f1": 0.13333333333333333,
         "rouge_l": 0.13333333333333333,
@@ -44,7 +56,10 @@
       "metrics": {
         "em": 0.0,
         "f1": 0.30769230769230765,
-        "rouge_l": 0.30769230769230765
+        "rouge_l": 0.30769230769230765,
+        "bertscore_precision": 0.20925280451774597,
+        "bertscore_recall": 0.48395010828971863,
+        "bertscore_f1": 0.34410300850868225
       },
       "agent_log": {
         "agent": "openai_full_context",
@@ -57,12 +72,15 @@
       "qa_idx": 1,
       "category": "2",
       "question": "When did Melanie paint a sunrise?",
-      "gold_answer": 2022,
-      "prediction": "Melanie painted a lake sunrise last year.",
+      "gold_answer": "2022",
+      "prediction": "I don't know.",
       "metrics": {
         "em": 0.0,
         "f1": 0.0,
-        "rouge_l": 0.0
+        "rouge_l": 0.0,
+        "bertscore_precision": 0.09790109843015671,
+        "bertscore_recall": 0.11651468276977539,
+        "bertscore_f1": 0.10864145308732986
       },
       "agent_log": {
         "agent": "openai_full_context",
@@ -80,7 +98,10 @@
       "metrics": {
         "em": 0.0,
         "f1": 0.13333333333333333,
-        "rouge_l": 0.13333333333333333
+        "rouge_l": 0.13333333333333333,
+        "bertscore_precision": 0.1781773716211319,
+        "bertscore_recall": 0.2208205759525299,
+        "bertscore_f1": 0.200712189078331
       },
       "agent_log": {
         "agent": "openai_full_context",

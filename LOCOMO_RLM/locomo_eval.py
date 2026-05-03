@@ -8,6 +8,57 @@ from typing import Any, Dict, List, Optional
 
 from openai import OpenAI
 
+
+class BertScoreMetric:
+    def __init__(
+        self,
+        model_type: str = "roberta-large",
+        lang: str = "en",
+        rescale_with_baseline: bool = True,
+    ):
+        try:
+            from bert_score import BERTScorer
+        except ImportError as e:
+            raise ImportError(
+                "BERTScore is enabled but bert-score is not installed. "
+                "Install it with: pip install bert-score"
+            ) from e
+
+        self.scorer = BERTScorer(
+            model_type=model_type,
+            lang=lang,
+            rescale_with_baseline=rescale_with_baseline,
+        )
+
+    def score(self, pred: str, gold: Any) -> Dict[str, float]:
+        gold_answers = gold if isinstance(gold, list) else [gold]
+        pred = str(pred or "")
+        gold_answers = [str(g or "") for g in gold_answers]
+
+        if not pred.strip() and any(not g.strip() for g in gold_answers):
+            return {
+                "bertscore_precision": 1.0,
+                "bertscore_recall": 1.0,
+                "bertscore_f1": 1.0,
+            }
+
+        if not pred.strip() or all(not g.strip() for g in gold_answers):
+            return {
+                "bertscore_precision": 0.0,
+                "bertscore_recall": 0.0,
+                "bertscore_f1": 0.0,
+            }
+
+        preds = [pred] * len(gold_answers)
+        precision, recall, f1 = self.scorer.score(preds, gold_answers)
+        best_idx = int(f1.argmax().item())
+
+        return {
+            "bertscore_precision": float(precision[best_idx].item()),
+            "bertscore_recall": float(recall[best_idx].item()),
+            "bertscore_f1": float(f1[best_idx].item()),
+        }
+
 def load_json(path: str) -> Any:
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
@@ -170,6 +221,7 @@ class OpenAIFullContextBaseline(BaseEvalAgent):
     LLM full-context baseline.
 
     It directly gives the whole conversation history to OpenAI.
+    
     """
 
     def __init__(
@@ -243,20 +295,7 @@ class OpenAIFullContextBaseline(BaseEvalAgent):
 
 class RLMAgentEvalWrapper(BaseEvalAgent):
     """
-    Wrapper for teammate's RLMAgent interface.
-
-    Given interface:
-
-        from src import RLMAgent
-
-        agent = RLMAgent(args.model_name, top_k=args.top_k)
-
-        response, log = agent.forward(message)
-
-    Important:
-    - Their current example does not pass dataset into RLMAgent.
-    - Therefore this wrapper puts LoCoMo history/documents into the message.
-    - If later RLMAgent supports explicit memory loading, update TODO section below.
+    Wrapper for RLMAgent interface.
 
     """
 
@@ -292,7 +331,7 @@ class RLMAgentEvalWrapper(BaseEvalAgent):
             documents=documents,
             top_k=self.top_k,
         )
-    
+
     def load_memory(self, sample:  Dict[str, Any]):
         sample_id = sample.get("sample_id", "unknown_sample")
         if (
@@ -300,7 +339,7 @@ class RLMAgentEvalWrapper(BaseEvalAgent):
             or self.rebuild_per_sample
             or self.current_sample_id != sample_id
         ):
-            self._build_agent(sample)  
+            self._build_agent(sample)
             self.current_sample_id = sample_id
         history = sample.get("history", [])
         documents = sample.get("documents", [])
@@ -314,7 +353,7 @@ class RLMAgentEvalWrapper(BaseEvalAgent):
         #     )
 
         # documents_text = "\n\n".join(doc_chunks)
-        self.agent.history = history
+        self.agent.history = list(history)
         # self.agent.documents = documents_text
         # self.index(documents_text)
 
@@ -339,12 +378,20 @@ def mean(values: List[float]) -> float:
 
 
 def aggregate_results(items: List[Dict[str, Any]]) -> Dict[str, Any]:
+    metric_keys = sorted({
+        key
+        for item in items
+        for key, value in item.get("metrics", {}).items()
+        if isinstance(value, (int, float))
+    })
+
     overall = {
-        "em": mean([x["metrics"]["em"] for x in items]),
-        "f1": mean([x["metrics"]["f1"] for x in items]),
-        "rouge_l": mean([x["metrics"]["rouge_l"] for x in items]),
-        "count": len(items),
+        key: mean([x["metrics"][key] for x in items if key in x["metrics"]])
+        for key in metric_keys
     }
+    overall.update({
+        "count": len(items),
+    })
 
     by_category = defaultdict(list)
     for item in items:
@@ -354,11 +401,12 @@ def aggregate_results(items: List[Dict[str, Any]]) -> Dict[str, Any]:
 
     for category, group in by_category.items():
         category_summary[category] = {
-            "em": mean([x["metrics"]["em"] for x in group]),
-            "f1": mean([x["metrics"]["f1"] for x in group]),
-            "rouge_l": mean([x["metrics"]["rouge_l"] for x in group]),
-            "count": len(group),
+            key: mean([x["metrics"][key] for x in group if key in x["metrics"]])
+            for key in metric_keys
         }
+        category_summary[category].update({
+            "count": len(group),
+        })
 
     return {
         "overall": overall,
@@ -393,6 +441,18 @@ def evaluate(
     args,
 ):
     data = load_json(data_path)
+    bertscore_metric = None
+    if args.bertscore:
+        print(
+            "Loading BERTScore "
+            f"(model={args.bertscore_model}, lang={args.bertscore_lang}, "
+            f"rescale_with_baseline={args.bertscore_rescale_with_baseline})"
+        )
+        bertscore_metric = BertScoreMetric(
+            model_type=args.bertscore_model,
+            lang=args.bertscore_lang,
+            rescale_with_baseline=args.bertscore_rescale_with_baseline,
+        )
 
     if args.max_samples is not None:
         data = data[:args.max_samples]
@@ -433,6 +493,8 @@ def evaluate(
                 "f1": token_f1(prediction, gold_answer),
                 "rouge_l": rouge_l(prediction, gold_answer),
             }
+            if bertscore_metric is not None:
+                metrics.update(bertscore_metric.score(prediction, gold_answer))
 
             item = {
                 "sample_id": sample_id,
@@ -535,6 +597,34 @@ def parse_args():
             "If set, keep only the latest N characters of conversation history."
         ),
     )
+
+    parser.add_argument(
+        "--bertscore",
+        action="store_true",
+        help="Add BERTScore precision/recall/F1 to the evaluation metrics.",
+    )
+
+    parser.add_argument(
+        "--bertscore-model",
+        type=str,
+        default="roberta-large",
+        help="BERTScore model_type passed to bert_score.BERTScorer.",
+    )
+
+    parser.add_argument(
+        "--bertscore-lang",
+        type=str,
+        default="en",
+        help="Language passed to bert_score.BERTScorer.",
+    )
+
+    parser.add_argument(
+        "--no-bertscore-rescale-with-baseline",
+        action="store_false",
+        dest="bertscore_rescale_with_baseline",
+        help="Disable BERTScore baseline rescaling.",
+    )
+    parser.set_defaults(bertscore_rescale_with_baseline=True)
 
     return parser.parse_args()
 
