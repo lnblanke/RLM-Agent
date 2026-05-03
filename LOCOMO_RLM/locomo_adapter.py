@@ -46,9 +46,7 @@ def locomo_to_history(sample: Dict[str, Any]) -> List[Dict[str, str]]:
 
             if not text:
                 continue
-
-            # RLM Agent 只认识 user / agent
-            # 这里默认 speaker_a -> user, speaker_b -> agent
+                
             msg_type = "user" if speaker == speaker_a else "agent"
 
             content = (

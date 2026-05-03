@@ -8,11 +8,6 @@ from typing import Any, Dict, List, Optional
 
 from openai import OpenAI
 
-
-# ============================================================
-# IO
-# ============================================================
-
 def load_json(path: str) -> Any:
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
@@ -23,10 +18,6 @@ def save_json(data: Any, path: str) -> None:
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
-
-# ============================================================
-# Metrics
-# ============================================================
 
 def normalize_text(s: Any) -> str:
     if s is None:
@@ -107,31 +98,20 @@ def rouge_l(pred: str, gold: Any) -> float:
     return max(rouge_l_single(pred, str(g)) for g in gold_answers)
 
 
-# ============================================================
-# LoCoMo QA field helpers
-# ============================================================
-
 def get_question(qa: Dict[str, Any]) -> str:
-    for key in ["question", "query", "q"]:
-        if key in qa and qa[key] is not None:
-            return str(qa[key])
+    if "question" in qa and qa["question"] is not None:
+        return str(qa["question"])
     return ""
 
 
 def get_answer(qa: Dict[str, Any]) -> Any:
-    for key in ["answer", "gold_answer", "answers", "target", "reference"]:
-        if key in qa and qa[key] is not None:
-            return qa[key]
+    if "answer" in qa and qa["answer"] is not None:
+        return str(qa["answer"])
     return ""
 
 
 def get_category(qa: Dict[str, Any]) -> str:
     return str(qa.get("category", "unknown"))
-
-
-# ============================================================
-# OpenAI full-context baseline prompt
-# ============================================================
 
 def format_history(history: List[Dict[str, str]], max_chars: Optional[int] = None) -> str:
     chunks = []
@@ -144,9 +124,6 @@ def format_history(history: List[Dict[str, str]], max_chars: Optional[int] = Non
     text = "\n\n".join(chunks)
 
     if max_chars is not None and len(text) > max_chars:
-        # TODO:
-        # This is a simple truncated-context baseline.
-        # If needed, replace with turn-level sliding window truncation.
         text = text[-max_chars:]
 
     return text
@@ -175,75 +152,6 @@ Question:
 Answer with a short, direct answer only.
 """.strip()
 
-
-# ============================================================
-# RLM prompt construction
-# ============================================================
-
-def build_rlm_eval_message(sample: Dict[str, Any], question: str) -> str:
-    """
-    Build one message for RLMAgent.forward(message).
-
-    The current RLMAgent interface from teammate is:
-
-        from src import RLMAgent
-        agent = RLMAgent(model_name, top_k=top_k)
-        response, log = agent.forward(message)
-
-    Since the constructor does NOT accept dataset/history/documents,
-    we pass the converted LoCoMo memory inside the message.
-
-    TODO for RLMAgent owner:
-    Ideally, RLMAgent should support loading external memory directly, e.g.
-
-        agent.load_memory(
-            history=sample["history"],
-            documents=sample["documents"],
-            metadata=sample["metadata"],
-        )
-
-    Then this message can be simplified to only the question.
-    """
-
-    history = sample.get("history", [])
-    documents = sample.get("documents", [])
-    metadata = sample.get("metadata", [])
-
-    history_text = format_history(history)
-
-    # Keep documents readable but not overly complicated.
-    doc_chunks = []
-    for i, doc in enumerate(documents):
-        meta = metadata[i] if i < len(metadata) else {}
-        doc_chunks.append(
-            f"[Document {i} | metadata={json.dumps(meta, ensure_ascii=False)}]\n{doc}"
-        )
-
-    documents_text = "\n\n".join(doc_chunks)
-
-    return f"""
-You are evaluating a Recursive Language Model agent on the LoCoMo long-term conversational memory dataset.
-
-Use ONLY the provided conversation memory to answer the question.
-Do not use outside knowledge.
-If the answer is not supported by the memory, answer "I don't know."
-
-Conversation history:
-{history_text}
-
-Memory documents:
-{documents_text}
-
-Question:
-{question}
-
-Return only the final answer. Do not explain your reasoning.
-""".strip()
-
-
-# ============================================================
-# Agent interface
-# ============================================================
 
 class BaseEvalAgent:
     def answer(self, sample: Dict[str, Any], question: str) -> Dict[str, Any]:
@@ -350,14 +258,6 @@ class RLMAgentEvalWrapper(BaseEvalAgent):
     - Therefore this wrapper puts LoCoMo history/documents into the message.
     - If later RLMAgent supports explicit memory loading, update TODO section below.
 
-    Usage:
-
-        python3 eval_locomo_llm_baseline.py \
-          --agent rlm \
-          --data data/locomo_rlm_format.json \
-          --out results/locomo_rlm_eval.json \
-          --model-name gpt-4o-mini \
-          --top-k 5
     """
 
     def __init__(
@@ -376,85 +276,61 @@ class RLMAgentEvalWrapper(BaseEvalAgent):
         """
         Build RLMAgent.
 
-        TODO:
-        If RLMAgent later accepts dataset/memory, change this function to:
-
-            self.agent = RLMAgent(
-                self.model_name,
-                dataset=sample,
-                top_k=self.top_k,
-            )
-
-        or:
-
-            self.agent = RLMAgent(self.model_name, top_k=self.top_k)
-            self.agent.load_memory(
-                history=sample["history"],
-                documents=sample["documents"],
-                metadata=sample["metadata"],
-            )
         """
 
         try:
             from src import RLMAgent
         except ImportError as e:
             raise ImportError(
-                "Cannot import RLMAgent. Expected interface: from src import RLMAgent. "
-                "Please run this script from the project root where src/ is available."
+                "Cannot import RLMAgent."
             ) from e
 
-        # This matches teammate's current interface exactly:
-        #     agent = RLMAgent(args.model_name, top_k=args.top_k)
-        self.agent = RLMAgent(self.model_name, top_k=self.top_k)
+        documents = sample.get("documents", [])
 
-        # TODO:
-        # If RLMAgent has memory attributes, uncomment/adapt these lines.
-        #
-        # if hasattr(self.agent, "history"):
-        #     self.agent.history = sample.get("history", [])
-        #
-        # if hasattr(self.agent, "documents"):
-        #     self.agent.documents = sample.get("documents", [])
-        #
-        # if hasattr(self.agent, "metadata"):
-        #     self.agent.metadata = sample.get("metadata", [])
+        self.agent = RLMAgent(
+            self.model_name,
+            documents=documents,
+            top_k=self.top_k,
+        )
+    
+    def load_memory(self, sample:  Dict[str, Any]):
+        sample_id = sample.get("sample_id", "unknown_sample")
+        if (
+            self.agent is None
+            or self.rebuild_per_sample
+            or self.current_sample_id != sample_id
+        ):
+            self._build_agent(sample)  
+            self.current_sample_id = sample_id
+        history = sample.get("history", [])
+        documents = sample.get("documents", [])
+        # metadata = sample.get("metadata", [])
+        # history_text = format_history(history)
+        # doc_chunks = []
+        # for i, doc in enumerate(documents):
+        #     meta = metadata[i] if i < len(metadata) else {}
+        #     doc_chunks.append(
+        #         f"[Document {i} | metadata={json.dumps(meta, ensure_ascii=False)}]\n{doc}"
+        #     )
+
+        # documents_text = "\n\n".join(doc_chunks)
+        self.agent.history = history
+        # self.agent.documents = documents_text
+        # self.index(documents_text)
+
 
     def answer(self, sample: Dict[str, Any], question: str) -> Dict[str, Any]:
         sample_id = sample.get("sample_id", "unknown_sample")
 
-        # Build a fresh RLMAgent for each LoCoMo sample by default.
-        # This avoids memory leakage across different conversations.
-        if (
-            self.agent is None
-            or self.rebuild_per_sample
-            and self.current_sample_id != sample_id
-        ):
-            self._build_agent(sample)
-            self.current_sample_id = sample_id
+        self.load_memory(sample)
 
-        message = build_rlm_eval_message(sample=sample, question=question)
-
-        # This matches teammate's current interface:
-        #     response, log = agent.forward(message)
-        result = self.agent.forward(message)
-
-        if isinstance(result, tuple):
-            response = result[0]
-            log = result[1] if len(result) > 1 else None
-        else:
-            # Fallback in case future RLMAgent returns only response.
-            response = result
-            log = None
+        response, log = self.agent.forward(question)
 
         return {
             "prediction": str(response).strip(),
             "log": log,
         }
 
-
-# ============================================================
-# Aggregation
-# ============================================================
 
 def mean(values: List[float]) -> float:
     if not values:
@@ -490,12 +366,8 @@ def aggregate_results(items: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
-# ============================================================
-# Main evaluation
-# ============================================================
-
 def build_eval_agent(args) -> BaseEvalAgent:
-    model_name = args.model_name or args.model
+    model_name = args.model_name
 
     if args.agent == "openai":
         return OpenAIFullContextBaseline(
@@ -536,7 +408,7 @@ def evaluate(
             qa_items = qa_items[:args.max_questions_per_sample]
 
         print(f"\nEvaluating sample {sample_idx + 1}/{len(data)}: {sample_id}")
-        print(f"History turns: {len(history)}, QA: {len(qa_items)}")
+        print(f"History turns Num: {len(history)}, QA Num: {len(qa_items)}")
 
         for qa_idx, qa in enumerate(qa_items):
             question = get_question(qa)
@@ -546,7 +418,7 @@ def evaluate(
             if not question:
                 continue
 
-            print(f"  QA {qa_idx + 1}/{len(qa_items)} | category={category}")
+            print(f"QA {qa_idx + 1}/{len(qa_items)} | category={category}")
 
             agent_output = eval_agent.answer(
                 sample=sample,
@@ -576,9 +448,9 @@ def evaluate(
 
             results.append(item)
 
-            print(f"    Prediction: {prediction}")
-            print(f"    Gold: {gold_answer}")
-            print(f"    Metrics: {metrics}")
+            print(f"Prediction: {prediction}")
+            print(f"Gold: {gold_answer}")
+            print(f"Metrics: {metrics}")
 
             # Save partial results after every question.
             partial_output = {
@@ -626,16 +498,6 @@ def parse_args():
         help="Evaluation agent type: openai or rlm",
     )
 
-    # Compatible with previous evaluation script.
-    parser.add_argument(
-        "--model",
-        type=str,
-        default="gpt-4o-mini",
-        help="Model name used by OpenAI baseline or RLMAgent",
-    )
-
-    # Compatible with teammate's interface:
-    # parser.add_argument("--model-name", type=str, required=True)
     parser.add_argument(
         "--model-name",
         type=str,

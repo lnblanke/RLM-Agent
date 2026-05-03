@@ -2,7 +2,7 @@ LoCoMo Evaluation
 This script evaluates an OpenAI LLM baseline on the converted LoCoMo dataset.
 ---
 1. Install dependencies
-pip install openai
+pip install openai bm25s
 ---
 2. Set OpenAI API key
 Linux / macOS:
@@ -41,7 +41,7 @@ category breakdown
 5. Arguments
 --data: input dataset  
 --out: output file  
---model: OpenAI model  
+--model-name: OpenAI model  
 --max-samples: debug with first N samples  
 --max-questions-per-sample: debug with first N questions  
 --max-context-chars: truncate long history
