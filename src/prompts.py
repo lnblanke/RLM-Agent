@@ -17,23 +17,24 @@ followup_prompt = """You can now continue to take actions to construct a high-qu
 2. Call the external tools available (search engine, Python interpreter, etc.)
 3. Create a list of subtasks that will be dispatched to other agents to complete
 
-If you want to take action 1 or 2, respond with "Action 1" or "Action 2", and we will provide further instructions.
+As a recap, the orginal user message is: {message}
+
+If you want to take action 1, respond with "Lookup [index 1],[index 2],...", where [index i] specifies an index of message to lookup.
+If you want to take action 2, respond with "Action 2", and we will provide further instructions.
 If you want to take action 3, respond with "Action 3: [task 1],[task 2],...", where [task i] is the description of i-th task to be performed.
 If you want to respond to the message, respond with "Action 0: [message to reply]".
 """
 
-lookup_prompt = """You just asked to lookup the past conversation. According to the record, there are {conv_count} total messages from past conversation (excluding the one user just sent), including {user_conv_count} user messages and {agent_conv_count} agent replies. 
+lookup_prompt = """You just asked to lookup the past conversation. According to the record, there are {conv_count} total messages from past conversation (excluding the one user just sent). The messages are ordered by the time sent, where the first message is the earliest one in the conversation and {conv_count} is the latest one.
 
-If you want to read the x-th message, respond with "Lookup [x]". The messages are ordered by the time sent, where the first message is the earliest one in the conversation and {conv_count} is the latest one. x should be in the range [1, {conv_count}].
+To lookup messages, respond with "Lookup [index 1],[index 2],...", where [index i] specifies an index of message to lookup. All indices should be in the range [1, {conv_count}]. You can only lookup AT MOST 10 messages at one time.
 """
 
-lookup_followup_prompt = """Message {idx} is: 
+lookup_followup_prompt = lambda msgs: '\n\n'.join(["""Message {idx} is: 
 
 Sender: {sender}
 Content: {message}
-
-If you want to read other messages, respond with "Lookup [x]" to read the x-th message. Otherwise, respond with "Quit"
-"""
+""".format(idx=idx, sender=sender, message=message) for idx, sender, message in msgs])
 
 tool_prompt = """You just asked to call the external tools available. Currently the system supports the following external tools to use:
 1. A Python interpreter that can run Python scripts
@@ -82,7 +83,10 @@ task_followup_prompt = """You can now continue to take actions to complete the t
 2. Call the external tools available (search engine, Python interpreter, etc.)
 3. Create a list of subtasks that will be dispatched to other agents to complete
 
-If you want to take action 1 or 2, respond with "Action 1" or "Action 2", and we will provide further instructions.
+As the recap, the original task is: {task}
+
+If you want to take action 1, respond with "Lookup [index 1],[index 2],...", where [index i] specifies an index of message to lookup.
+If you want to take action 2, respond with "Action 2", and we will provide further instructions.
 If you want to take action 3, respond with "Action 3: [subtask 1],[subtask 2],...", where [subtask i] is the description of i-th subtask to be performed.
 If you think the task can be completed, respond with "Action 0: [output of the task]".
 """
