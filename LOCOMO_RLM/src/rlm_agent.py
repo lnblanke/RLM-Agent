@@ -35,7 +35,7 @@ class RLMAgent:
             self.searcher = bm25s.BM25(corpus=documents)
             self.searcher.index(bm25s.tokenize(documents))
 
-    def model_call(self, prompt):
+    def model_call(self, prompt, max_retries=10):
         # output = self.model.chat(prompt, sampling_params=sampling_params, use_tqdm=False)[0].outputs[0].text
 
         # if output.startswith("<think>"):
@@ -44,6 +44,7 @@ class RLMAgent:
         #         output = (match.group(1).strip('\n'), match.group(2).strip('\n'))
         #     except Exception as e:
         #         print(e)
+        
         messages = []
         for msg in prompt:
             role = msg.get("role", "user")
@@ -55,28 +56,58 @@ class RLMAgent:
                 "role": role,
                 "content": content
             })
-
-        response = self.client.chat.completions.create(
-            model=self.model_name,
-            messages=messages,
-            temperature=0,
-            top_p=0.95,
-            max_tokens=4096,
-        )
-
-        output = response.choices[0].message.content or ""
-
-        if output.startswith("<think>"):
+        
+        for attempt in range(max_retries):
             try:
-                match = re.match(r"<think>(.*)</think>(.*)", output, flags=re.DOTALL)
-                output = (
-                    match.group(1).strip("\n"),
-                    match.group(2).strip("\n")
+                response = self.client.chat.completions.create(
+                    model=self.model_name,
+                    messages=messages,
+                    temperature=0,
+                    top_p=0.95,
+                    max_tokens=512,
                 )
-            except Exception as e:
-                print(e)
+                output = response.choices[0].message.content or ""
 
-        return output
+                if output.startswith("<think>"):
+                    try:
+                        match = re.match(r"<think>(.*)</think>(.*)", output, flags=re.DOTALL)
+                        output = (
+                            match.group(1).strip("\n"),
+                            match.group(2).strip("\n")
+                        )
+                    except Exception as e:
+                        print(e)
+
+                return output
+            
+            except RateLimitError as e:
+                wait = min(60, 1 + attempt * 2 + random.uniform(0, 1))
+                print(f"[RateLimit] 429 at attempt {attempt + 1}/{max_retries}. Sleep {wait:.1f}s and retry...")
+                time.sleep(wait)
+
+        raise RuntimeError("Rate limit still exceeded after retries.")
+
+        # response = self.client.chat.completions.create(
+        #     model=self.model_name,
+        #     messages=messages,
+        #     temperature=0,
+        #     top_p=0.95,
+        #     max_tokens=512,
+        # )
+
+        # output = response.choices[0].message.content or ""
+
+        # if output.startswith("<think>"):
+        #     try:
+        #         match = re.match(r"<think>(.*)</think>(.*)", output, flags=re.DOTALL)
+        #         output = (
+        #             match.group(1).strip("\n"),
+        #             match.group(2).strip("\n")
+        #         )
+        #     except Exception as e:
+        #         print(e)
+
+        # return output
 
     def exec_lookup(self, record):
         msg_list = []

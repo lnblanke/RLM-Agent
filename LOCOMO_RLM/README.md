@@ -3,6 +3,9 @@ This script evaluates an OpenAI LLM baseline on the converted LoCoMo dataset.
 ---
 1. Install dependencies
 pip install openai bm25s
+
+Optional BERTScore metric:
+pip install bert-score
 ---
 2. Set OpenAI API key
 Linux / macOS:
@@ -33,15 +36,30 @@ python3 locomo_eval.py \
   --max-samples 1 \
   --max-questions-per-sample 3
 
+RLM with BERTScore:
+
+python3 locomo_eval.py \
+  --agent rlm \
+  --data data/locomo_rlm_format.json \
+  --out results/locomo_rlm_eval_bertscore.json \
+  --model-name gpt-4o-mini \
+  --top-k 5 \
+  --max-samples 1 \
+  --max-questions-per-sample 3 \
+  --bertscore
+
 ---
-4. Metrics (EM / F1 / ROUGE-L)
+4. Metrics (EM / F1 / ROUGE-L / optional BERTScore)
 per-question predictions
 category breakdown
 ---
 5. Arguments
---data: input dataset  
---out: output file  
---model-name: OpenAI model  
---max-samples: debug with first N samples  
---max-questions-per-sample: debug with first N questions  
+--data: input dataset
+--out: output file
+--model-name: OpenAI model
+--max-samples: debug with first N samples
+--max-questions-per-sample: debug with first N questions
 --max-context-chars: truncate long history
+--bertscore: add BERTScore precision / recall / F1
+--bertscore-model: BERTScore model type, default roberta-large
+--no-bertscore-rescale-with-baseline: disable BERTScore baseline rescaling
