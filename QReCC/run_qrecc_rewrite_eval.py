@@ -4,8 +4,9 @@
 import json
 import re
 import argparse
+from tqdm import tqdm
 from typing import List, Dict, Any
-
+from src import *
 
 def normalize_text(text: str) -> str:
     text = text.lower().strip()
@@ -101,41 +102,35 @@ def load_qrecc(path: str) -> List[Dict[str, Any]]:
 
 
 class RLMClient:
-    def __init__(self, model):
+    def __init__(self, model: RLMAgent):
         self.model = model
 
     def rewrite(self, context: List[str], question: str) -> str:
-        # TODO: Remove it, only for testing
-        if self.model is None:
-            return question
+        self.model.load_conversation(context)
 
-        prompt = build_rewrite_prompt(context, question)
+        prompt = build_rewrite_prompt(question)
 
-        response = self.model.generate(
-            prompt=prompt,
-            max_depth=3,
+        response, log = self.model.forward(
+            message=prompt,
         )
 
-        return response.strip()
+        return response.strip(), log
 
-def build_rewrite_prompt(context: List[str], question: str) -> str:
-    context_text = "\n".join(context)
-
+def build_rewrite_prompt(question: str) -> str:
     return f"""
     You are doing conversational question rewriting.
 
-    Conversation context:
-    {context_text}
-
-    Current question:
+    Question:
     {question}
 
-    Rewrite the current question into a standalone question.
+    Rewrite the current question into a standalone question by replacing references to past conversations with their actual meanings.
     Only output the rewritten question.
     """
 
 
 def evaluate_rewrite_only(
+    agent: str,
+    model_name: str,
     data_path: str,
     output_path: str,
     max_examples: int = None,
@@ -145,15 +140,22 @@ def evaluate_rewrite_only(
     if max_examples is not None:
         examples = examples[:max_examples]
 
-    rlm = RLMClient(model=None)  # TODO: Replace it
+    if agent == "rlm":
+        agent = RLMAgent(model_name)
+    elif agent == "rag":
+        agent = RAGAgent(model_name)
+    else:
+        agent = FullContextAgent(model_name)
+
+    rlm = RLMClient(model=agent)
 
     results = []
     em_scores = []
     f1_scores = []
     rouge_scores = []
 
-    for ex in examples:
-        pred_rewrite = rlm.rewrite(
+    for ex in tqdm(examples):
+        pred_rewrite, log = rlm.rewrite(
             context=ex["context"],
             question=ex["question"],
         )
@@ -177,6 +179,7 @@ def evaluate_rewrite_only(
             "rewrite_em": em,
             "rewrite_f1": f1,
             "rewrite_rouge_l": rouge,
+            "log": log,
         })
 
     avg_em = sum(em_scores) / len(em_scores)
@@ -205,6 +208,7 @@ def evaluate_rewrite_only(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("--model_name", type=str, required=True)
     parser.add_argument("--data_path", type=str, required=True)
     parser.add_argument("--output_path", type=str, default="qrecc_rewrite_results.json")
     parser.add_argument("--max_examples", type=int, default=None)

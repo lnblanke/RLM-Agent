@@ -11,6 +11,8 @@ import statistics
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Iterable
+from tqdm import tqdm
+from src import RLMAgent, FullContextAgent
 
 
 TOKEN_RE = re.compile(r"[A-Za-z0-9]+")
@@ -169,6 +171,8 @@ def retrieval_metrics(
     for qid, rels in qrels.items():
         if not rels:
             continue
+        if predictions.get(qid) == None:
+            continue
         ranked = extract_ranked_pids(predictions.get(qid, {}))
         relevant = {pid for pid, rel in rels.items() if rel > 0}
         for cutoff in cutoffs:
@@ -247,6 +251,8 @@ def generation_metrics(
     lengths = []
     for turn in turns:
         qid = turn["sample_id"]
+        if predictions.get(qid) == None:
+            continue
         prediction = extract_response(predictions.get(qid, {}))
         if prediction is None:
             continue
@@ -325,6 +331,51 @@ def export_prompts(args: argparse.Namespace) -> None:
             }
             handle.write(json.dumps(prompt, ensure_ascii=False) + "\n")
 
+def get_retrieved_docs(documents, log):
+    res = set()
+
+    for item in log:
+        if item["type"] == "tool calling" and item["tool"] is not None and item["tool"]["name"] == "search":
+            for doc in item["tool"]["docs"]:
+                res.add(documents[doc])
+        elif item["type"] == "task":
+            for task in item["tasks"]:
+                res.update(get_retrieved_docs(documents, task["log"]))
+
+    return list(res)
+
+def predict(args: argparse.Namespace) -> None:
+    documents = load_json_or_jsonl(args.corpus)
+    corpus = [doc["ref_string"] for doc in documents]
+    documents = {doc["ref_string"]: doc["ref_id"] for doc in documents}
+
+    if args.agent == "rlm":
+        agent = RLMAgent(args.model_name, documents=corpus)
+    else:
+        agent = FullContextAgent(args.model_name, documents=corpus)
+
+
+    conversations = load_conversations(args.conversations)
+    predictions = []
+
+    if args.max_samples is not None:
+        conversations = conversations[:args.max_samples]
+
+    for conversation in tqdm(conversations):
+        for turn in conversation["turns"]:
+            if len(turn["golden_docs_pids"]) == 0:
+                break
+            response, log = agent.forward(turn["question"])
+
+            predictions.append({
+                "sample_id": conversation["conv_id"] + "_" + str(turn["turn_id"]),
+                "response": response,
+                "retrieved_pids": get_retrieved_docs(documents, log),
+                "citations": [],
+                "log": log,
+            })
+
+    json.dump(predictions, open(args.output_file, 'w'))
 
 def evaluate(args: argparse.Namespace) -> None:
     conversations = load_conversations(args.conversations)

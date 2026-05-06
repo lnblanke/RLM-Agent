@@ -269,10 +269,10 @@ class RLMAgentEvalWrapper(BaseEvalAgent):
         self.model_name = model_name
         self.top_k = top_k
         self.rebuild_per_sample = rebuild_per_sample
-        self.agent = None
+        self._build_agent()
         self.current_sample_id = None
 
-    def _build_agent(self, sample: Dict[str, Any]) -> None:
+    def _build_agent(self) -> None:
         """
         Build RLMAgent.
 
@@ -285,38 +285,29 @@ class RLMAgentEvalWrapper(BaseEvalAgent):
                 "Cannot import RLMAgent."
             ) from e
 
-        documents = sample.get("documents", [])
-
         self.agent = RLMAgent(
             self.model_name,
-            documents=documents,
             top_k=self.top_k,
         )
     
     def load_memory(self, sample:  Dict[str, Any]):
         sample_id = sample.get("sample_id", "unknown_sample")
-        if (
-            self.agent is None
-            or self.rebuild_per_sample
-            or self.current_sample_id != sample_id
-        ):
-            self._build_agent(sample)  
-            self.current_sample_id = sample_id
-        history = sample.get("history", [])
-        documents = sample.get("documents", [])
-        # metadata = sample.get("metadata", [])
-        # history_text = format_history(history)
-        # doc_chunks = []
-        # for i, doc in enumerate(documents):
-        #     meta = metadata[i] if i < len(metadata) else {}
-        #     doc_chunks.append(
-        #         f"[Document {i} | metadata={json.dumps(meta, ensure_ascii=False)}]\n{doc}"
-        #     )
+        # if (
+        #     self.agent is None
+        #     or self.rebuild_per_sample
+        #     or self.current_sample_id != sample_id
+        # ):
+        #     self._build_agent(sample)  
+        #     self.current_sample_id = sample_id
+        history = sample.get("conversation", {})
+        conversations = []
 
-        # documents_text = "\n\n".join(doc_chunks)
-        self.agent.history = history
-        # self.agent.documents = documents_text
-        # self.index(documents_text)
+        for k, v in history.items():
+            if k.startswith("session") and isinstance(v, list):
+                for msg in v:
+                    conversations.append({"type": msg["speaker"], "content": msg["text"]})
+
+        self.agent.load_conversation(conversations)
 
 
     def answer(self, sample: Dict[str, Any], question: str) -> Dict[str, Any]:
@@ -324,7 +315,17 @@ class RLMAgentEvalWrapper(BaseEvalAgent):
 
         self.load_memory(sample)
 
-        response, log = self.agent.forward(question)
+        prompt = """
+Answer a question based on past conversation. Do not use outside knowledge.
+If the answer is not supported by the conversation, answer "I don't know."
+
+Question:
+{question}
+
+Answer with a short, direct answer only.
+"""
+
+        response, log = self.agent.forward(prompt.format(question=question))
 
         return {
             "prediction": str(response).strip(),
@@ -401,7 +402,7 @@ def evaluate(
 
     for sample_idx, sample in enumerate(data):
         sample_id = sample.get("sample_id", f"sample_{sample_idx}")
-        history = sample.get("history", [])
+        history = sample.get("conversation", [])
         qa_items = sample.get("qa", [])
 
         if args.max_questions_per_sample is not None:
