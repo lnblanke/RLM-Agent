@@ -335,10 +335,10 @@ def get_retrieved_docs(documents, log):
     res = set()
 
     for item in log:
-        if item["type"] == "tool calling" and item["tool"] is not None and item["tool"]["name"] == "search":
+        if "type" in item and item["type"] == "tool calling" and item["tool"] is not None and item["tool"]["name"] == "search":
             for doc in item["tool"]["docs"]:
                 res.add(documents[doc])
-        elif item["type"] == "task":
+        elif "type" in item and item["type"] == "task":
             for task in item["tasks"]:
                 res.update(get_retrieved_docs(documents, task["log"]))
 

@@ -2,12 +2,15 @@ from vllm import LLM, SamplingParams
 import bm25s
 import re
 import sys
+import numpy as np
 from io import StringIO
 import contextlib
 import logging
 from openai import OpenAI
 import openai
 import time
+import tiktoken
+from transformers import AutoTokenizer
 from src.prompts import *
 
 @contextlib.contextmanager
@@ -22,6 +25,13 @@ def stdoutIO(stdout=None):
 sampling_params = SamplingParams(temperature=0, top_p=0.95, top_k=50, seed=0, max_tokens=16384)
 
 logger = logging.getLogger(__name__)
+
+class GPTTokenizer:
+    def __init__(self, name):
+        self.tokenizer = tiktoken.encoding_for_model("gpt-4-mini")
+    
+    def apply_chat_template(self, messages, *args, **kwargs):
+        return self.tokenizer.encode(' '.join([msg["content"] for msg in messages]), *args, **kwargs)
 
 class OpenAIModel:
     def __init__(self, model):
@@ -51,8 +61,10 @@ class RLMAgent:
     def __init__(self, model_name, documents=[], top_k=5):
         if model_name.startswith("gpt"):
             self.model = OpenAIModel(model_name)
+            self.tokenizer = GPTTokenizer(model_name)
         else:
             self.model = LLM(model_name, gpu_memory_utilization=0.8, trust_remote_code=True, max_model_len=16384)
+            self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.history = []
         self.top_k = min(top_k, len(documents))
         self.index(documents)
@@ -85,6 +97,7 @@ class RLMAgent:
             self.history.append(msg)
 
     def model_call(self, prompt):
+        self.token_count += len(self.tokenizer.apply_chat_template(prompt))
         output = self.model.chat(prompt, sampling_params=sampling_params, use_tqdm=False)
         
         if not isinstance(output, str): 
@@ -334,8 +347,12 @@ class RLMAgent:
                 return response, log
 
     def forward(self, message):
+        self.token_count = 0
         response, log = self.exec_subtask(message, init=True)    
         self.history += [{"type": "user", "content": message}, {"type": "agent", "content": response}]
+
+        log.append({"token_count": self.token_count})
+
         return response, log
 
 full_context_prompt = """You are an AI agent engaging in a conversation with the user and now you need to reply to a new message from the user.
@@ -363,11 +380,12 @@ Past conversations:
 
 class FullContextAgent(RLMAgent):
     def forward(self, message):
+        self.token_count = 0
         past_conversation = '\n'.join(["{speaker}: {content}".format(speaker=turn["type"], content=turn["content"]) for turn in self.history])
 
         if self.top_k == 0:
             prompt = full_context_prompt.format(message=message, conversations=past_conversation)
-            docs = []
+            docs = np.array([])
         else:
             docs = self.exec_search(message)
             prompt = full_context_prompt_with_retrieval.format(message=message, top_k=self.top_k, documents='\n'.join(docs), conversations=past_conversation)
@@ -380,7 +398,7 @@ class FullContextAgent(RLMAgent):
                 "name": "search",
                 "docs": docs.tolist()
             }
-        }]
+        }, {"token_count": self.token_count}]
     
 rag_prompt = """You are an AI agent engaging in a conversation with the user and now you need to reply to a new message from the user.
 
@@ -394,6 +412,7 @@ Top {k} most relevant messages from past conversations:
 
 class RAGAgent(RLMAgent):
     def forward(self, message):
+        self.token_count = 0
         if len(self.history) > 0:
             corpus = ["{speaker}: {content}".format(speaker=turn["type"], content=turn["content"]) for turn in self.history]
             searcher = bm25s.BM25(corpus=corpus)
@@ -409,4 +428,4 @@ class RAGAgent(RLMAgent):
         prompt = rag_prompt.format(message=message, conversations='\n'.join(docs), k=top_k)
         response = self.model_call([{"role": "system", "content": prompt}])
         self.history += [{"type": "user", "content": message}, {"type": "agent", "content": response}]
-        return response, None
+        return response, [{"token_count": self.token_count}]

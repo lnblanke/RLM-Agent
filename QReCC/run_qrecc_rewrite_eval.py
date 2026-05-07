@@ -6,6 +6,7 @@ import re
 import argparse
 from tqdm import tqdm
 from typing import List, Dict, Any
+import random
 from src import *
 
 def normalize_text(text: str) -> str:
@@ -138,6 +139,8 @@ def evaluate_rewrite_only(
     examples = load_qrecc(data_path)
 
     if max_examples is not None:
+        random.seed(42)
+        random.shuffle(examples)
         examples = examples[:max_examples]
 
     if agent == "rlm":
